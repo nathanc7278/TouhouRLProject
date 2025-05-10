@@ -106,7 +106,7 @@ class touhou_env(gym.Env):
         cv2.imwrite("./temp/gray_image.jpg", gray_image)
         life_image = gray_image[self.life_bar_y: self.life_bar_y + self.life_bar_h, self.life_bar_x:1280]
         cv2.imwrite("./temp/life_image.jpg", life_image)
-        _, bw_image_lives = cv2.threshold(life_image, 127, 255, cv2.THRESH_BINARY)
+        _, bw_image_lives = cv2.threshold(life_image, 200, 255, cv2.THRESH_BINARY)
         coutours, _ = cv2.findContours(bw_image_lives, cv2.RETR_LIST , cv2.CHAIN_APPROX_NONE)
         self.num_lives = len(coutours) + 1
         return gray_image
@@ -124,15 +124,22 @@ class touhou_env(gym.Env):
                 self.life_bar_h = ocr_result['height'][i]
 
     def find_life_bar_template(self):
-        image = np.array(self.sct.grab(self.monitor))[100:400, 850:1280, :3]
+        image = np.array(self.sct.grab(self.monitor))[:, :, :3]
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        template = cv2.imread("./templates/lives.png", 0)
-        res = cv2.matchTemplate(gray_image, template, cv2.TM_CCOEFF_NORMED)
-        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-        
-        self.life_bar_x = min_loc[0] + 850 + template.shape[0] 
-        self.life_bar_y = min_loc[1] + 100
-        self.life_bar_h = template.shape[0]
+        templates = ["./templates/ddc_lives.png", 
+                     "./templates/ufo_lives.png"]
+        best_match_val = 0
+        best_match_loc = None
+        for i in templates:
+            template = cv2.imread(i, 0)
+            res = cv2.matchTemplate(gray_image, template, cv2.TM_CCORR_NORMED)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+            if max_val > best_match_val:
+                best_match_val = max_val
+                best_match_loc = max_loc
+                self.life_bar_x = best_match_loc[0] + 100
+                self.life_bar_y = best_match_loc[1]
+                self.life_bar_h = template.shape[0]
 
 
     def close(self):
