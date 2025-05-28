@@ -18,9 +18,9 @@ class touhou_env(gym.Env):
         self.monitor = {'top': 0 , 'left': 0, 'width': 1290, 'height': 990}
         self.sct = mss.mss()
 
-        self.observation_space = spaces.Box(low=0, high=255, shape=(960, 1280, 3), dtype=np.uint8)
+        self.observation_space = spaces.Box(low=0, high=255, shape=(4, 84, 84, 3), dtype=np.uint8)
         self.action_space = spaces.Discrete(8)
-        self.action_keys = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+        self.action_keys = [0, 1, 2, 3, 4, 5, 6, 7]
 
         self.life_bar_x = 0
         self.life_bar_y = 0
@@ -63,11 +63,16 @@ class touhou_env(gym.Env):
             print(f"Error starting the game: {e}")
 
     def reset(self):
-        time.sleep(3)
-        pydirectinput.press('z')
-        pydirectinput.press('down')
-        pydirectinput.press('z')
-        time.sleep(3)
+        time.sleep(1)
+        pydirectinput.press('esc')
+        time.sleep(1)
+        pydirectinput.press('r')
+        time.sleep(1)
+        obs = self._get_obs()
+        info = {
+            "lives": self.num_lives
+        }
+        return obs, info
 
     def step(self, action):
         key = self.action_keys[action]
@@ -89,31 +94,46 @@ class touhou_env(gym.Env):
             # no operation
             pass
         
-        time.sleep(0.016)       # time for 1 frame when 60 fps
-
+        time.sleep(0.016 * 4)       # time for 4 frame when 60 fps
+        prev_lives = self.num_lives
         obs = self._get_obs()
-        print(self.num_lives)
-        reward = 0
-        done = 0
-        info = 0
+        if prev_lives > self.num_lives:
+            reward = -300
+        else:
+            reward = 1
+        
+        if self.num_lives == 1:
+            done = 1
+        else:
+            done = 0
+
+        info = {
+            "lives": self.num_lives
+        }
         return obs, reward, done, info
 
 
     def _get_obs(self):
-        image = np.array(self.sct.grab(self.monitor))[:, :, :3]
-        cv2.imwrite("./assets/image.jpg", image)
-        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        cv2.imwrite("./assets/gray_image.jpg", gray_image)
-        life_image = gray_image[self.life_bar_y: self.life_bar_y + self.life_bar_h, self.life_bar_x:1280]
-        cv2.imwrite("./assets/life_image.jpg", life_image)
-        threshold = 100
-        if self.game_number in [12, 14, 15, 17, 18]:          # These games have high contrast around lives
-            threshold = 240
-        _, bw_image_lives = cv2.threshold(life_image, threshold, 255, cv2.THRESH_BINARY)
-        cv2.imwrite("./assets/bw_image_lives.jpg", bw_image_lives)
-        coutours, _ = cv2.findContours(bw_image_lives, cv2.RETR_LIST , cv2.CHAIN_APPROX_NONE)
-        self.num_lives = len(coutours) + 1
-        return gray_image
+        frames = []
+        for i in range(4):
+            image = np.array(self.sct.grab(self.monitor))[:, :, :3]
+            cv2.imwrite("./assets/image.jpg", image)
+            gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            cv2.imwrite("./assets/gray_image.jpg", gray_image)
+            life_image = gray_image[self.life_bar_y: self.life_bar_y + self.life_bar_h, self.life_bar_x:1280]
+            cv2.imwrite("./assets/life_image.jpg", life_image)
+            threshold = 100
+            if self.game_number in [12, 14, 15, 17, 18]:          # These games have high contrast around lives
+                threshold = 240
+            _, bw_image_lives = cv2.threshold(life_image, threshold, 255, cv2.THRESH_BINARY)
+            cv2.imwrite("./assets/bw_image_lives.jpg", bw_image_lives)
+            coutours, _ = cv2.findContours(bw_image_lives, cv2.RETR_LIST , cv2.CHAIN_APPROX_NONE)
+            self.num_lives = len(coutours) + 1
+            game_area = gray_image[50:970, 30:850]
+            resized = cv2.resize(game_area, (84, 84), interpolation=cv2.INTER_AREA)
+            frames.append(resized)
+        obs = np.stack([frames[0], frames[1], frames[2], frames[3]], axis=0)
+        return obs
     
     def find_life_bar_template(self):
         image = np.array(self.sct.grab(self.monitor))[:, :, :3]
