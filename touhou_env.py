@@ -1,6 +1,6 @@
-import gym
+import gymnasium as gym
 import os
-from gym import spaces
+from gymnasium import spaces
 import numpy as np
 import mss
 import cv2
@@ -18,7 +18,7 @@ class touhou_env(gym.Env):
         self.monitor = {'top': 0 , 'left': 0, 'width': 1290, 'height': 990}
         self.sct = mss.mss()
 
-        self.observation_space = spaces.Box(low=0, high=255, shape=(4, 84, 84, 3), dtype=np.uint8)
+        self.observation_space = spaces.Box(low=0, high=255, shape=(4, 84, 84), dtype=np.uint8)
         self.action_space = spaces.Discrete(8)
         self.action_keys = [0, 1, 2, 3, 4, 5, 6, 7]
 
@@ -26,6 +26,9 @@ class touhou_env(gym.Env):
         self.life_bar_y = 0
         self.life_bar_h = 0
         self.num_lives = 0
+
+        self.max_episode_steps = 1000
+        self.current_step = 0
 
         self._start_game()
 
@@ -62,19 +65,21 @@ class touhou_env(gym.Env):
         except Exception as e:
             print(f"Error starting the game: {e}")
 
-    def reset(self):
+    def reset(self, *, seed=None, options=None):
         time.sleep(1)
         pydirectinput.press('esc')
         time.sleep(1)
         pydirectinput.press('r')
         time.sleep(1)
         obs = self._get_obs()
+        self.current_step = 0
         info = {
             "lives": self.num_lives
         }
         return obs, info
 
     def step(self, action):
+        self.current_step += 1
         key = self.action_keys[action]
         if (key == 0):
             pydirectinput.keyDown('shift')
@@ -103,14 +108,16 @@ class touhou_env(gym.Env):
             reward = 1
         
         if self.num_lives == 1:
-            done = 1
+            terminated = 1
         else:
-            done = 0
+            terminated = 0
+
+        truncated = self.current_step >= self.max_episode_steps
 
         info = {
             "lives": self.num_lives
         }
-        return obs, reward, done, info
+        return obs, reward, terminated, truncated, info
 
 
     def _get_obs(self):
@@ -131,6 +138,7 @@ class touhou_env(gym.Env):
             self.num_lives = len(coutours) + 1
             game_area = gray_image[50:970, 30:850]
             resized = cv2.resize(game_area, (84, 84), interpolation=cv2.INTER_AREA)
+            cv2.imwrite("./assets/resized.jpg", resized)
             frames.append(resized)
         obs = np.stack([frames[0], frames[1], frames[2], frames[3]], axis=0)
         return obs

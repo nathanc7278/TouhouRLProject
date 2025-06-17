@@ -1,5 +1,7 @@
 from touhou_env import touhou_env
-import gym
+import gymnasium as gym
+from stable_baselines3 import PPO
+from stable_baselines3.common.vec_env import DummyVecEnv
 
 game_info = {
     6: (r"C:/Users/Nathan/Desktop/touhou game files/th6/th06 (en)", "The Embodiment of Scarlet Devil"),
@@ -20,13 +22,20 @@ game_number = 12
 game_path = game_info[game_number][0]
 game_title = game_info[game_number][1]
 
-env = touhou_env(game_number, game_path, game_title)
+def make_env():
+    return touhou_env(game_number, game_path, game_title)
 
-for _ in range(1000):
-    action = env.action_space.sample()
-    obs, reward, done, info = env.step(action)
-    # print(reward)
-    if done:
-        print("DONE")
-        env.reset()
-env.close()
+env = DummyVecEnv([make_env])
+model = PPO("CnnPolicy", env, verbose=1,
+            learning_rate=2.5e-4,
+            n_steps=2048,
+            batch_size=64,
+            gae_lambda=0.95,
+            gamma=0.99,
+            clip_range=0.2,
+            ent_coef=0.01,
+            tensorboard_log="./ppo_touhou_tensorboard/")
+
+model.learn(total_timesteps=1000000)
+model.save("ppo_touhou")
+model = PPO.load("ppo_touhou", env=env)
