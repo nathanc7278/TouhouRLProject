@@ -1,10 +1,28 @@
-from touhou_env import touhou_env, SkipFrame
+from touhou_env import touhou_env
 import gymnasium as gym
+from gymnasium import Wrapper
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 from datetime import datetime
 import os
 
+class SkipFrame(Wrapper):
+    def __init__(self, env, skip=4):
+        super().__init__(env)
+        self.skip = skip
+    def step(self, action):
+        total_reward = 0
+        terminated = False
+        truncated = False
+        info = {}
+
+        for _ in range(self.skip):
+            obs, reward, terminated, truncated, info = self.env.step(action)
+            total_reward += reward
+            if terminated or truncated:
+                break
+        return obs, total_reward, terminated, truncated, info
+    
 game_info = {
     6: (r"C:/Users/Nathan/Desktop/touhou game files/th6/th06 (en)", "The Embodiment of Scarlet Devil"),
     7: (r"C:/Users/Nathan/Desktop/touhou game files/th7/th07 (en)", "Perfect Cherry Blossom"),
@@ -25,10 +43,14 @@ game_path = game_info[game_number][0]
 game_title = game_info[game_number][1]
 
 def make_env():
-    return touhou_env(game_number, game_path, game_title)
+    def _init():
+        env = touhou_env(game_number, game_path, game_title)
+        env = SkipFrame(env, skip=4)
+        return env
+    return _init
 
-env = DummyVecEnv([make_env])
-env = SkipFrame(env, skip=4)
+
+env = DummyVecEnv([make_env()])
 env = VecFrameStack(env, n_stack=4)
 
 # Cnn Policy is better for images compared to Mlp policy
