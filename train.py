@@ -1,4 +1,4 @@
-from touhou_env import touhou_env
+from touhou_env import touhou_env, SkipFrame
 import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
@@ -28,7 +28,9 @@ def make_env():
     return touhou_env(game_number, game_path, game_title)
 
 env = DummyVecEnv([make_env])
+env = SkipFrame(env, skip=4)
 env = VecFrameStack(env, n_stack=4)
+
 # Cnn Policy is better for images compared to Mlp policy
 log_dir = f"./logs/ppo_run_{datetime.now().strftime('%m%d%Y_%H%M%S')}"
 os.makedirs(log_dir, exist_ok=True)
