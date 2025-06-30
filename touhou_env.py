@@ -8,6 +8,8 @@ import pydirectinput
 import time
 import pygetwindow
 
+HOLD_DURATION = 3   # each key is held for hold duration * number of frames skipped amount of frames
+
 class touhou_env(gym.Env):
     def __init__(self, game_number, game_path, game_title):
         super().__init__()
@@ -19,8 +21,8 @@ class touhou_env(gym.Env):
         self.sct = mss.mss()
 
         self.observation_space = spaces.Box(low=0, high=255, shape=(1, 84, 84), dtype=np.uint8)
-        self.action_space = spaces.Discrete(9)
-        self.action_keys = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+        self.action_space = spaces.Discrete(7)
+        self.action_keys = [0, 1, 2, 3, 4, 5, 6]
         self.held_keys = {}
 
         self.life_bar_x = 0
@@ -68,10 +70,8 @@ class touhou_env(gym.Env):
 
     def reset(self, *, seed=None, options=None):
         for k in self.held_keys:
-            self.held_keys[k] -= 1
-            if self.held_keys[k] <= 0:
-                pydirectinput.keyUp(k)
-                self.held_keys = {}
+            pydirectinput.keyUp(k)
+        self.held_keys = {}
         time.sleep(1)
         pydirectinput.press('esc')
         time.sleep(1)
@@ -97,26 +97,24 @@ class touhou_env(gym.Env):
             del self.held_keys[k]
 
         if (key == 0):
-            pydirectinput.keyDown('shift')
+            pydirectinput.keyDown('z')
+            self.held_keys['z'] = HOLD_DURATION
         if (key == 1): 
-            pydirectinput.keyUp('shift')
+            pydirectinput.keyDown('shift')
+            self.held_keys['shift'] = HOLD_DURATION
         if (key == 2): 
             pydirectinput.keyDown('left')
-            self.held_keys['left'] = 1 
+            self.held_keys['left'] = HOLD_DURATION
         if (key == 3): 
             pydirectinput.keyDown('right')
-            self.held_keys['right'] = 1
+            self.held_keys['right'] = HOLD_DURATION
         if (key == 4): 
             pydirectinput.keyDown('up')
-            self.held_keys['up'] = 1
+            self.held_keys['up'] = HOLD_DURATION
         if (key == 5):
             pydirectinput.keyDown('down')
-            self.held_keys['down'] = 1
+            self.held_keys['down'] = HOLD_DURATION
         if (key == 6):
-            pydirectinput.keyDown('z')
-        if (key == 7):
-            pydirectinput.keyUp('z')
-        if (key == 8):
             # no operation
             pass
         
