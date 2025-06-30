@@ -1,7 +1,9 @@
 from touhou_env import touhou_env
 import gymnasium as gym
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
+from datetime import datetime
+import os
 
 game_info = {
     6: (r"C:/Users/Nathan/Desktop/touhou game files/th6/th06 (en)", "The Embodiment of Scarlet Devil"),
@@ -18,7 +20,7 @@ game_info = {
     18: (r"C:/Users/Nathan/Desktop/touhou game files/th18/th18 (en)", "Unconnected Marketeers")
 }
 
-game_number = 12
+game_number = 10
 game_path = game_info[game_number][0]
 game_title = game_info[game_number][1]
 
@@ -26,16 +28,22 @@ def make_env():
     return touhou_env(game_number, game_path, game_title)
 
 env = DummyVecEnv([make_env])
-model = PPO("CnnPolicy", env, verbose=1,
-            learning_rate=2.5e-4,
-            n_steps=2048,
-            batch_size=64,
-            gae_lambda=0.95,
-            gamma=0.99,
-            clip_range=0.2,
-            ent_coef=0.01,
-            tensorboard_log="./ppo_touhou_tensorboard/")
-
-model.learn(total_timesteps=1000000)
-model.save("ppo_touhou")
-model = PPO.load("ppo_touhou", env=env)
+env = VecFrameStack(env, n_stack=4)
+# Cnn Policy is better for images compared to Mlp policy
+log_dir = f"./logs/ppo_run_{datetime.now().strftime('%m%d%Y_%H%M%S')}"
+os.makedirs(log_dir, exist_ok=True)
+checkpoint_dir = os.path.join(log_dir, "checkpoints")
+os.makedirs(checkpoint_dir, exist_ok=True)
+model = PPO("CnnPolicy", env, verbose=1, 
+            ent_coef=0.1,
+            tensorboard_log=log_dir)
+try:
+    loop_count = 0
+    while True:
+        model.learn(total_timesteps=100000, reset_num_timesteps=False)
+        loop_count += 1
+        checkpoint_path = os.path.join(checkpoint_dir, f"model_checkpoint_{loop_count}_million_steps")
+        model.save(checkpoint_path)
+except KeyboardInterrupt:
+    path = os.path.join(log_dir, "final_model")
+    model.save(path)

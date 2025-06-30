@@ -1,4 +1,3 @@
 __pycache__/
-log.txt
 scoreth*.dat
-ppo_touhou_tensorboard/
+logs/

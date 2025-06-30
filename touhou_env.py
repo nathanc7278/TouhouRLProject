@@ -18,9 +18,10 @@ class touhou_env(gym.Env):
         self.monitor = {'top': 0 , 'left': 0, 'width': 1290, 'height': 990}
         self.sct = mss.mss()
 
-        self.observation_space = spaces.Box(low=0, high=255, shape=(4, 84, 84), dtype=np.uint8)
-        self.action_space = spaces.Discrete(8)
-        self.action_keys = [0, 1, 2, 3, 4, 5, 6, 7]
+        self.observation_space = spaces.Box(low=0, high=255, shape=(1, 84, 84), dtype=np.uint8)
+        self.action_space = spaces.Discrete(9)
+        self.action_keys = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+        self.held_keys = {}
 
         self.life_bar_x = 0
         self.life_bar_y = 0
@@ -66,6 +67,11 @@ class touhou_env(gym.Env):
             print(f"Error starting the game: {e}")
 
     def reset(self, *, seed=None, options=None):
+        for k in self.held_keys:
+            self.held_keys[k] -= 1
+            if self.held_keys[k] <= 0:
+                pydirectinput.keyUp(k)
+                self.held_keys = {}
         time.sleep(1)
         pydirectinput.press('esc')
         time.sleep(1)
@@ -81,31 +87,45 @@ class touhou_env(gym.Env):
     def step(self, action):
         self.current_step += 1
         key = self.action_keys[action]
+        keys_to_release = []
+        for k in self.held_keys:
+            self.held_keys[k] -= 1
+            if self.held_keys[k] <= 0:
+                pydirectinput.keyUp(k)
+                keys_to_release.append(k)
+        for k in keys_to_release:
+            del self.held_keys[k]
+
         if (key == 0):
             pydirectinput.keyDown('shift')
         if (key == 1): 
             pydirectinput.keyUp('shift')
         if (key == 2): 
-            pydirectinput.press('left')
+            pydirectinput.keyDown('left')
+            self.held_keys['left'] = 1 
         if (key == 3): 
-            pydirectinput.press('right')
+            pydirectinput.keyDown('right')
+            self.held_keys['right'] = 1
         if (key == 4): 
-            pydirectinput.press('up')
+            pydirectinput.keyDown('up')
+            self.held_keys['up'] = 1
         if (key == 5):
-            pydirectinput.keyDown('z')
+            pydirectinput.keyDown('down')
+            self.held_keys['down'] = 1
         if (key == 6):
-            pydirectinput.keyUp('z')
+            pydirectinput.keyDown('z')
         if (key == 7):
+            pydirectinput.keyUp('z')
+        if (key == 8):
             # no operation
             pass
         
-        time.sleep(0.016 * 4)       # time for 4 frame when 60 fps
         prev_lives = self.num_lives
         obs = self._get_obs()
         if prev_lives > self.num_lives:
             reward = -300
         else:
-            reward = 1
+            reward = 0.1
         
         if self.num_lives == 1:
             terminated = 1
@@ -121,27 +141,23 @@ class touhou_env(gym.Env):
 
 
     def _get_obs(self):
-        frames = []
-        for i in range(4):
-            image = np.array(self.sct.grab(self.monitor))[:, :, :3]
-            cv2.imwrite("./assets/image.jpg", image)
-            gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            cv2.imwrite("./assets/gray_image.jpg", gray_image)
-            life_image = gray_image[self.life_bar_y: self.life_bar_y + self.life_bar_h, self.life_bar_x:1280]
-            cv2.imwrite("./assets/life_image.jpg", life_image)
-            threshold = 100
-            if self.game_number in [12, 14, 15, 17, 18]:          # These games have high contrast around lives
-                threshold = 240
-            _, bw_image_lives = cv2.threshold(life_image, threshold, 255, cv2.THRESH_BINARY)
-            cv2.imwrite("./assets/bw_image_lives.jpg", bw_image_lives)
-            coutours, _ = cv2.findContours(bw_image_lives, cv2.RETR_LIST , cv2.CHAIN_APPROX_NONE)
-            self.num_lives = len(coutours) + 1
-            game_area = gray_image[50:970, 30:850]
-            resized = cv2.resize(game_area, (84, 84), interpolation=cv2.INTER_AREA)
-            cv2.imwrite("./assets/resized.jpg", resized)
-            frames.append(resized)
-        obs = np.stack([frames[0], frames[1], frames[2], frames[3]], axis=0)
-        return obs
+        image = np.array(self.sct.grab(self.monitor))[:, :, :3]
+        # cv2.imwrite("./assets/image.jpg", image)
+        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        # cv2.imwrite("./assets/gray_image.jpg", gray_image)
+        life_image = gray_image[self.life_bar_y: self.life_bar_y + self.life_bar_h, self.life_bar_x:1280]
+        # cv2.imwrite("./assets/life_image.jpg", life_image)
+        threshold = 100
+        if self.game_number in [12, 14, 15, 17, 18]:          # These games have high contrast around lives
+            threshold = 240
+        _, bw_image_lives = cv2.threshold(life_image, threshold, 255, cv2.THRESH_BINARY)
+        #cv2.imwrite("./assets/bw_image_lives.jpg", bw_image_lives)
+        coutours, _ = cv2.findContours(bw_image_lives, cv2.RETR_LIST , cv2.CHAIN_APPROX_NONE)
+        self.num_lives = len(coutours) + 1
+        game_area = gray_image[50:970, 30:850]
+        resized = cv2.resize(game_area, (84, 84), interpolation=cv2.INTER_AREA)
+        # cv2.imwrite("./assets/resized.jpg", resized)
+        return resized[np.newaxis, :, :]
     
     def find_life_bar_template(self):
         image = np.array(self.sct.grab(self.monitor))[:, :, :3]
