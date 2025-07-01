@@ -7,8 +7,10 @@ import cv2
 import pydirectinput
 import time
 import pygetwindow
+from pymem import Pymem
 
-HOLD_DURATION = 3   # each key is held for hold duration * number of frames skipped amount of frames
+ADDRESS_OF_LIVES = 0x00474C70
+ADDRESS_OF_POWER = 0x00474C48
 
 class touhou_env(gym.Env):
     def __init__(self, game_number, game_path, game_title):
@@ -17,22 +19,27 @@ class touhou_env(gym.Env):
         self.game_path = game_path
         self.game_title = game_title
 
-        self.monitor = {'top': 0 , 'left': 0, 'width': 1290, 'height': 990}
+        self.monitor = {'top': 0 , 'left': 0, 'width': 1280, 'height': 960}
         self.sct = mss.mss()
+        self.process = None
 
-        self.observation_space = spaces.Box(low=0, high=255, shape=(1, 84, 84), dtype=np.uint8)
-        self.action_space = spaces.Discrete(7)
-        self.action_keys = [0, 1, 2, 3, 4, 5, 6]
-        self.held_keys = {}
-
-        self.life_bar_x = 0
-        self.life_bar_y = 0
-        self.life_bar_h = 0
+        self.observation_space = spaces.Box(low=0, high=255, shape=(84, 84, 3), dtype=np.uint8)
+        self.action_space = spaces.MultiDiscrete([9, 2, 2])
+        self.movement_mapping = {
+            0: [],
+            1: ['left'],
+            2: ['right'],
+            3: ['up'],
+            4: ['down'],
+            5: ['left', 'up'],
+            6: ['right', 'up'],
+            7: ['left', 'down'],
+            8: ['right', 'down']
+        }
+        self.held_keys = []
+        
         self.num_lives = 0
-
-        self.max_episode_steps = 1000
-        self.current_step = 0
-
+        self.power = 0
         self._start_game()
 
     
@@ -56,14 +63,11 @@ class touhou_env(gym.Env):
             window.moveTo(0, 0)
             time.sleep(6)
             for i in range(8):
-                if self.game_number == 15 and i == 1:   # LoLK needs to click down once to go to Legacy mode
-                    pydirectinput.press('down')
                 pydirectinput.press('z')
                 time.sleep(0.2)
             time.sleep(3)
-            self.find_life_bar_template()
-            if (self.life_bar_x == 0 and self.life_bar_y == 0):
-                print("Life bar not found")
+            self.process = Pymem("th10.exe")
+            if not self.process.is_open():
                 exit(1)
         except Exception as e:
             print(f"Error starting the game: {e}")
@@ -71,7 +75,7 @@ class touhou_env(gym.Env):
     def reset(self, *, seed=None, options=None):
         for k in self.held_keys:
             pydirectinput.keyUp(k)
-        self.held_keys = {}
+            self.held_keys.remove(k)
         time.sleep(1)
         pydirectinput.press('esc')
         time.sleep(1)
@@ -85,55 +89,52 @@ class touhou_env(gym.Env):
         return obs, info
 
     def step(self, action):
-        self.current_step += 1
-        key = self.action_keys[action]
-        keys_to_release = []
+        movement, shift, shoot = action
         for k in self.held_keys:
-            self.held_keys[k] -= 1
-            if self.held_keys[k] <= 0:
-                pydirectinput.keyUp(k)
-                keys_to_release.append(k)
-        for k in keys_to_release:
-            del self.held_keys[k]
+            pydirectinput.keyUp(k)
+            self.held_keys.remove(k)
 
-        if (key == 0):
+        keys_to_hold = self.movement_mapping.get(movement, [])
+        if shift == 1:
+            pydirectinput.keyDown("shift")
+            self.held_keys.append("shift")
+        if shoot == 1:
             pydirectinput.keyDown('z')
-            self.held_keys['z'] = HOLD_DURATION
-        if (key == 1): 
-            pydirectinput.keyDown('shift')
-            self.held_keys['shift'] = HOLD_DURATION
-        if (key == 2): 
-            pydirectinput.keyDown('left')
-            self.held_keys['left'] = HOLD_DURATION
-        if (key == 3): 
-            pydirectinput.keyDown('right')
-            self.held_keys['right'] = HOLD_DURATION
-        if (key == 4): 
-            pydirectinput.keyDown('up')
-            self.held_keys['up'] = HOLD_DURATION
-        if (key == 5):
-            pydirectinput.keyDown('down')
-            self.held_keys['down'] = HOLD_DURATION
-        if (key == 6):
-            # no operation
-            pass
-        
+            self.held_keys.append("z")
+        for k in keys_to_hold:
+            pydirectinput.keyDown(k)
+            self.held_keys.append(k)
         prev_lives = self.num_lives
+        prev_power = self.power
         obs = self._get_obs()
+        try:
+            self.num_lives = self.process.read_int(ADDRESS_OF_LIVES)
+            self.power = self.process.read_int(ADDRESS_OF_POWER)
+        except Exception as e:
+            reward = 0
+            terminated = True
+            truncated = True
+            info = {"lives": self.num_lives, "crash": True}
+            return obs, reward, terminated, truncated, info
+
         if prev_lives > self.num_lives:
-            reward = -300
-        else:
+            reward = -500
+        elif prev_lives < self.num_lives:
+            reward = 300
+        elif prev_lives == self.num_lives:
             reward = 0.1
         
+        if prev_power < self.power:
+            reward = 0.5
+
         if self.num_lives == 1:
             terminated = 1
         else:
             terminated = 0
-
-        truncated = self.current_step >= self.max_episode_steps
-
+        
+        truncated = False
         info = {
-            "lives": self.num_lives
+            "lives": self.num_lives, "crash": False
         }
         return obs, reward, terminated, truncated, info
 
@@ -141,48 +142,13 @@ class touhou_env(gym.Env):
     def _get_obs(self):
         image = np.array(self.sct.grab(self.monitor))[:, :, :3]
         # cv2.imwrite("./assets/image.jpg", image)
-        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        # cv2.imwrite("./assets/gray_image.jpg", gray_image)
-        life_image = gray_image[self.life_bar_y: self.life_bar_y + self.life_bar_h, self.life_bar_x:1280]
-        # cv2.imwrite("./assets/life_image.jpg", life_image)
-        threshold = 100
-        if self.game_number in [12, 14, 15, 17, 18]:          # These games have high contrast around lives
-            threshold = 240
-        _, bw_image_lives = cv2.threshold(life_image, threshold, 255, cv2.THRESH_BINARY)
-        #cv2.imwrite("./assets/bw_image_lives.jpg", bw_image_lives)
-        coutours, _ = cv2.findContours(bw_image_lives, cv2.RETR_LIST , cv2.CHAIN_APPROX_NONE)
-        self.num_lives = len(coutours) + 1
-        game_area = gray_image[50:970, 30:850]
+        game_area = image[75:965, 40:845]
         resized = cv2.resize(game_area, (84, 84), interpolation=cv2.INTER_AREA)
-        # cv2.imwrite("./assets/resized.jpg", resized)
-        return resized[np.newaxis, :, :]
-    
-    def find_life_bar_template(self):
-        image = np.array(self.sct.grab(self.monitor))[:, :, :3]
-        templates = {
-            6: "./assets/templates/eosd_lives.jpg",
-            7: "./assets/templates/pcb_lives.jpg",
-            8: "./assets/templates/in_lives.jpg",
-            10: "./assets/templates/mof_lives.jpg",
-            11: "./assets/templates/sa_lives.jpg",
-            12: "./assets/templates/ufo_lives.jpg",
-            13: "./assets/templates/td_lives.jpg",
-            14: "./assets/templates/ddc_lives.jpg", 
-            15: "./assets/templates/lolk_lives.jpg",
-            16: "./assets/templates/hsifs_lives.jpg",
-            17: "./assets/templates/wbawc_lives.jpg",
-            18: "./assets/templates/um_lives.jpg"
-        }
-        template = cv2.imread(templates[self.game_number])
-        if template is None:
-            print("template failed to load")
-            exit(1)
-        res = cv2.matchTemplate(image, template, cv2.TM_CCORR_NORMED)
-        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-        self.life_bar_x = max_loc[0] + 120
-        self.life_bar_y = max_loc[1]
-        self.life_bar_h = template.shape[0]
-
+        cv2.imwrite("./assets/resized.jpg", resized)
+        return resized
 
     def close(self):
         cv2.destroyAllWindows()
+
+
+
