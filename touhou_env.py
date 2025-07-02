@@ -121,7 +121,7 @@ class touhou_env(gym.Env):
         prev_lives = self.num_lives
         obs = self._get_obs()
         if prev_lives > self.num_lives:
-            reward = -300
+            reward = -10000
         else:
             reward = 0.1
         
@@ -154,7 +154,7 @@ class touhou_env(gym.Env):
         self.num_lives = len(coutours) + 1
         game_area = gray_image[50:970, 30:850]
         resized = cv2.resize(game_area, (84, 84), interpolation=cv2.INTER_AREA)
-        # cv2.imwrite("./assets/resized.jpg", resized)
+        cv2.imwrite("./assets/resized.jpg", resized)
         return resized[np.newaxis, :, :]
     
     def find_life_bar_template(self):

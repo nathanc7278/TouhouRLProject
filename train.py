@@ -8,7 +8,8 @@ from datetime import datetime
 import os
 import pygetwindow
 import glob
-
+import psutil
+import win32process
 class SkipFrame(Wrapper):
     def __init__(self, env, skip=4):
         super().__init__(env)
@@ -46,6 +47,38 @@ class CrashRecoveryCallback(BaseCallback):
                 self.model.set_env(new_env)
         return True
 
+def make_env():
+    def _init():
+        env = touhou_env(game_number, game_path, game_title)
+        env = SkipFrame(env, skip=4)
+        return env
+    return _init
+
+def is_game_running(game_title):
+    window = pygetwindow.getWindowsWithTitle(game_title)[0]
+    if not window:
+        return False
+    _, pid = win32process.GetWindowThreadProcessId(window._hWnd)
+    try:
+        proc = psutil.Process(pid)
+        if not proc.is_running() or proc.status() == psutil.STATUS_ZOMBIE:
+            return False
+    except Exception:
+        return False
+    return True
+
+def get_latest_checkpoint(checkpoint_dir):
+    checkpoints = glob.glob(os.path.join(checkpoint_dir, "*zip"))
+    if not checkpoints:
+        return None
+    return max(checkpoints, key=os.path.getctime)
+
+def get_latest_final_model(logs_root="./logs"):
+    final_models = glob.glob(os.path.join(logs_root, "**", "final_model.zip"), recursive=True)
+    if not final_models:
+        return None
+    return max(final_models, key=os.path.getctime)
+
 game_info = {
     6: (r"C:/Users/Nathan/Desktop/touhou game files/th6/th06 (en)", "The Embodiment of Scarlet Devil"),
     7: (r"C:/Users/Nathan/Desktop/touhou game files/th7/th07 (en)", "Perfect Cherry Blossom"),
@@ -65,24 +98,6 @@ game_number = 10
 game_path = game_info[game_number][0]
 game_title = game_info[game_number][1]
 
-def make_env():
-    def _init():
-        env = touhou_env(game_number, game_path, game_title)
-        env = SkipFrame(env, skip=4)
-        return env
-    return _init
-
-def is_game_running(game_number, game_info):
-    title = game_info[game_number][1]
-    print("Active windows:", pygetwindow.getAllTitles())
-    return any(title in window for window in pygetwindow.getAllTitles())
-
-def get_latest_checkpoint(checkpoint_dir):
-    checkpoints = glob.glob(os.path.join(checkpoint_dir, "*zip"))
-    if not checkpoints:
-        return None
-    return max(checkpoints, key=os.path.getctime)
-
 env = DummyVecEnv([make_env()])
 env = VecFrameStack(env, n_stack=4)
 
@@ -91,14 +106,18 @@ log_dir = f"./logs/ppo_run_{datetime.now().strftime('%m%d%Y_%H%M%S')}"
 os.makedirs(log_dir, exist_ok=True)
 checkpoint_dir = os.path.join(log_dir, "checkpoints")
 os.makedirs(checkpoint_dir, exist_ok=True)
-
-latest_checkpoint = get_latest_checkpoint(checkpoint_dir)
-if latest_checkpoint:
-    model = PPO.load(latest_checkpoint, env=env, tensorboard_log=log_dir)
+latest_final_model = get_latest_final_model()
+if latest_final_model:
+    model = PPO.load(latest_final_model, env=env, tensorboard_log=log_dir)
 else:
     model = PPO("CnnPolicy", env, verbose=1, 
-            ent_coef=0.1,
-            tensorboard_log=log_dir)
+                learning_rate=1e-5,
+                n_steps=2048,
+                batch_size=64,
+                n_epochs=4,
+                ent_coef=0.01,
+                clip_range=0.2,
+                tensorboard_log=log_dir)
 
 checkpoint_callback = CheckpointCallback(
     save_freq=2000,
@@ -114,7 +133,7 @@ crash_callback = CrashRecoveryCallback(
 
 try:
     while True:
-        if not is_game_running(game_number, game_info):
+        if not is_game_running(game_title):
             env.close()
             env = DummyVecEnv([make_env()])
             env = VecFrameStack(env, n_stack=4)
