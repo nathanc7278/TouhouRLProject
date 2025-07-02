@@ -8,6 +8,7 @@ import pydirectinput
 import time
 import pygetwindow
 from pymem import Pymem
+import psutil
 
 ADDRESS_OF_LIVES = 0x00474C70
 ADDRESS_OF_POWER = 0x00474C48
@@ -55,8 +56,7 @@ class touhou_env(gym.Env):
                     break
             if not matched_window:
                 print(f"Window with title containing '{self.game_title}' not found.")
-                exit(1)
-                
+                return
             window = pygetwindow.getWindowsWithTitle(matched_window)[0]
             window.restore()
             window.activate()
@@ -67,12 +67,14 @@ class touhou_env(gym.Env):
                 time.sleep(0.2)
             time.sleep(3)
             self.process = Pymem("th10.exe")
-            if not self.process.is_open():
-                exit(1)
+            if not self.is_process_alive():
+                return
         except Exception as e:
             print(f"Error starting the game: {e}")
 
     def reset(self, *, seed=None, options=None):
+        if not self.is_process_alive():
+            self._start_game()
         for k in self.held_keys:
             pydirectinput.keyUp(k)
             self.held_keys.remove(k)
@@ -142,11 +144,21 @@ class touhou_env(gym.Env):
     def _get_obs(self):
         image = np.array(self.sct.grab(self.monitor))[:, :, :3]
         # cv2.imwrite("./assets/image.jpg", image)
-        game_area = image[75:965, 40:845]
+        game_area = image[55:965, 45:855]
         resized = cv2.resize(game_area, (84, 84), interpolation=cv2.INTER_AREA)
         cv2.imwrite("./assets/resized.jpg", resized)
         return resized
 
+    def is_process_alive(self):
+        if not self.process or not self.process.process_handle:
+            return False
+        try:
+            proc = psutil.Process(self.process.process_id)
+            return proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE
+        except Exception:
+            return False
+        
+    
     def close(self):
         cv2.destroyAllWindows()
 
