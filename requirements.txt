@@ -22,6 +22,7 @@ packaging==25.0
 pandas==2.3.0
 pillow==11.3.0
 protobuf==6.31.1
+psutil==7.0.0
 PyDirectInput==1.0.4
 PyGetWindow==0.0.9
 Pymem==1.14.0
