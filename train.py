@@ -78,13 +78,13 @@ else:
     model = PPO("CnnPolicy", 
             env, 
             verbose=1,
-            learning_rate=2.5e-4,
-            n_steps=2048,
-            batch_size=64,
-            n_epochs=10,
+            learning_rate=5.0e-5,
+            n_steps=512,
+            batch_size=256,
+            n_epochs=20,
             gamma=0.99,
             gae_lambda=0.95,
-            ent_coef=0.05,
+            ent_coef=0.01,
             tensorboard_log=log_dir)
 
 checkpoint_callback = CheckpointCallback(

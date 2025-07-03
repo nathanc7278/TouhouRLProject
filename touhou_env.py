@@ -120,20 +120,19 @@ class touhou_env(gym.Env):
             return obs, reward, terminated, truncated, info
 
         if prev_lives > self.num_lives:
-            reward = -500
+            reward = -10
         elif prev_lives < self.num_lives:
-            reward = 300
+            reward = 10
         elif prev_lives == self.num_lives:
             reward = 0.1
         
         if prev_power < self.power:
-            reward = 0.5
+            reward = 0.3
 
-        if self.num_lives == 1:
-            terminated = 1
+        if self.num_lives == 0:
+            terminated = True
         else:
-            terminated = 0
-        
+            terminated = False
         truncated = False
         info = {
             "lives": self.num_lives, "crash": False
