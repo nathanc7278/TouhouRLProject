@@ -77,7 +77,7 @@ class touhou_env(gym.Env):
             self._start_game()
         for k in self.held_keys:
             pydirectinput.keyUp(k)
-            self.held_keys.remove(k)
+        self.held_keys.clear()
         time.sleep(1)
         pydirectinput.press('esc')
         time.sleep(1)
@@ -94,7 +94,7 @@ class touhou_env(gym.Env):
         movement, shift, shoot = action
         for k in self.held_keys:
             pydirectinput.keyUp(k)
-            self.held_keys.remove(k)
+        self.held_keys.clear()
 
         keys_to_hold = self.movement_mapping.get(movement, [])
         if shift == 1:

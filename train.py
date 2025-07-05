@@ -56,24 +56,25 @@ def make_env():
     return _init
 
 
-def get_latest_checkpoint(checkpoint_dir):
-    checkpoints = glob.glob(os.path.join(checkpoint_dir, "*zip"))
-    if not checkpoints:
+def get_latest_run(logs_root="./logs"):
+    runs = glob.glob(os.path.join(logs_root, "ppo_run_*", "final_model.zip"))
+    if not runs:
         return None
-    return max(checkpoints, key=os.path.getctime)
+    return max(runs, key=os.path.getctime)
 
 env = DummyVecEnv([make_env()])
 env = VecFrameStack(env, n_stack=4)
 
+latest_run = get_latest_run()
 # Cnn Policy is better for images compared to Mlp policy
 log_dir = f"./logs/ppo_run_{datetime.now().strftime('%m%d%Y_%H%M%S')}"
 os.makedirs(log_dir, exist_ok=True)
 checkpoint_dir = os.path.join(log_dir, "checkpoints")
 os.makedirs(checkpoint_dir, exist_ok=True)
 
-latest_checkpoint = get_latest_checkpoint(checkpoint_dir)
-if latest_checkpoint:
-    model = PPO.load(latest_checkpoint, env=env, tensorboard_log=log_dir)
+if latest_run:
+    print(f"Resuming from latest run: {latest_run}")
+    model = PPO.load(latest_run, env=env, tensorboard_log=log_dir)
 else:
     model = PPO("CnnPolicy", 
             env, 
