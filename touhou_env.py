@@ -14,11 +14,12 @@ ADDRESS_OF_LIVES = 0x00474C70
 ADDRESS_OF_POWER = 0x00474C48
 
 class touhou_env(gym.Env):
-    def __init__(self, game_number, game_path, game_title):
+    def __init__(self, game_number, game_path, game_title, stage=-1):
         super().__init__()
         self.game_number = game_number
         self.game_path = game_path
         self.game_title = game_title
+        self.stage = stage
 
         self.monitor = {'top': 0 , 'left': 0, 'width': 1280, 'height': 960}
         self.sct = mss.mss()
@@ -62,9 +63,19 @@ class touhou_env(gym.Env):
             window.activate()
             window.moveTo(0, 0)
             time.sleep(6)
-            for i in range(8):
+            pydirectinput.press('z')
+            time.sleep(0.5)
+            if (self.stage != -1):
+                pydirectinput.press('down')
+                time.sleep(0.5)
+            for i in range(4):
                 pydirectinput.press('z')
-                time.sleep(0.2)
+                time.sleep(0.5)
+            if (self.stage != -1):
+                for i in range(self.stage - 1):
+                    pydirectinput.press('down')
+                    time.sleep(0.5)
+            pydirectinput.press('z')
             time.sleep(3)
             self.process = Pymem("th10.exe")
             if not self.is_process_alive():
@@ -127,7 +138,7 @@ class touhou_env(gym.Env):
             reward = 0.1
         
         if prev_power < self.power:
-            reward = 0.3
+            reward += 0.3
 
         if self.num_lives == 0:
             terminated = True
@@ -159,6 +170,12 @@ class touhou_env(gym.Env):
         
     
     def close(self):
+        if self.process and self.process.process_handle:
+            try:
+                proc = psutil.Process(self.process.process_id)
+                proc.terminate()
+            except Exception as e:
+                print(f"Error terminating process: {e}")
         cv2.destroyAllWindows()
 
 
