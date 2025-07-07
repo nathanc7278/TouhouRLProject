@@ -20,6 +20,7 @@ class touhou_env(gym.Env):
         self.game_path = game_path
         self.game_title = game_title
         self.stage = stage
+        self.stage_over = False
 
         self.monitor = {'top': 0 , 'left': 0, 'width': 1280, 'height': 960}
         self.sct = mss.mss()
@@ -68,6 +69,8 @@ class touhou_env(gym.Env):
             if (self.stage != -1):
                 pydirectinput.press('down')
                 time.sleep(0.5)
+                pydirectinput.press('down')
+                time.sleep(0.5)
             for i in range(4):
                 pydirectinput.press('z')
                 time.sleep(0.5)
@@ -89,11 +92,20 @@ class touhou_env(gym.Env):
         for k in self.held_keys:
             pydirectinput.keyUp(k)
         self.held_keys.clear()
-        time.sleep(1)
-        pydirectinput.press('esc')
-        time.sleep(1)
-        pydirectinput.press('r')
-        time.sleep(1)
+        if self.stage_over and self.stage != -1:
+            time.sleep(0.5)
+            pydirectinput.press('z')
+            time.sleep(0.5)
+            pydirectinput.press('down')
+            time.sleep(0.5)
+            pydirectinput.press('z')
+            time.sleep(0.5)
+        else:
+            time.sleep(0.5)
+            pydirectinput.press('esc')
+            time.sleep(0.5)
+            pydirectinput.press('r')
+            time.sleep(0.5)
         obs = self._get_obs()
         self.current_step = 0
         info = {
@@ -120,6 +132,13 @@ class touhou_env(gym.Env):
         prev_lives = self.num_lives
         prev_power = self.power
         obs = self._get_obs()
+        self.is_stage_over(obs)
+        if self.stage_over:
+            reward = 100
+            terminated = True
+            truncated = False
+            info = {"lives": self.num_lives, "crash": False}
+            return obs, reward, terminated, truncated, info
         try:
             self.num_lives = self.process.read_int(ADDRESS_OF_LIVES)
             self.power = self.process.read_int(ADDRESS_OF_POWER)
@@ -167,7 +186,16 @@ class touhou_env(gym.Env):
             return proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE
         except Exception:
             return False
-        
+    
+    def is_stage_over(self, frame):
+        template = cv2.imread("./assets/stage_over.png")
+        resized = cv2.resize(template, (84, 84), interpolation=cv2.INTER_AREA)
+        match = cv2.matchTemplate(frame, resized, cv2.TM_CCOEFF_NORMED)
+        loc = np.where(match >= 0.8)
+        if len(loc[0]) > 0:
+            self.stage_over = True
+        else:
+            self.stage_over = False
     
     def close(self):
         if self.process and self.process.process_handle:
