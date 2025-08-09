@@ -150,7 +150,7 @@ class touhou_env(gym.Env):
             return obs, reward, terminated, truncated, info
 
         if prev_lives > self.num_lives:
-            reward = -10
+            reward = -50
         elif prev_lives < self.num_lives:
             reward = 10
         elif prev_lives == self.num_lives:

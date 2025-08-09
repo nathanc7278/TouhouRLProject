@@ -70,6 +70,20 @@ class CrashLoggerCallback(BaseCallback):
         return True
     
 
+class PrintEpisodeRewardCallback(BaseCallback):
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+        self.episode_rewards = []
+        self.episode_reward = 0
+
+    def _on_step(self) -> bool:
+        self.episode_reward += self.locals["rewards"][0]
+        if self.locals["dones"][0]:
+            print(f"Episode finished. Reward: {self.episode_reward}")
+            self.episode_rewards.append(self.episode_reward)
+            self.episode_reward = 0
+        return True
+
 game_info = {
     10: (r"C:/Users/Nathan/Desktop/touhou game files/thcrap/th10 (lang_en-CustomRecoloredPatch)", "Mountain of Faith"),
 }
@@ -116,13 +130,13 @@ while curriculum.current_stage < len(stages):
         model = PPO("CnnPolicy", 
                 env, 
                 verbose=1,
-                learning_rate=5.0e-5,
-                n_steps=512,
-                batch_size=256,
+                learning_rate=2.5e-5,
+                n_steps=2048,
+                batch_size=512,
                 n_epochs=20,
-                gamma=0.99,
-                gae_lambda=0.95,
-                ent_coef=0.01,
+                gamma=0.995,
+                gae_lambda=0.98,
+                ent_coef=0.02,
                 tensorboard_log=log_dir)
 
     checkpoint_callback = CheckpointCallback(
@@ -132,11 +146,11 @@ while curriculum.current_stage < len(stages):
     )
     crash_logger_callback = CrashLoggerCallback()
 
-    episode_rewards = []
+    print_reward_callback = PrintEpisodeRewardCallback()
     
     try:
         while True:
-            model.learn(total_timesteps=10000, reset_num_timesteps=False, callback=[checkpoint_callback, crash_logger_callback])
+            model.learn(total_timesteps=10000, reset_num_timesteps=False, callback=[checkpoint_callback, crash_logger_callback, print_reward_callback])
 
             mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=5, render=False)
             curriculum.update_performance(mean_reward)
