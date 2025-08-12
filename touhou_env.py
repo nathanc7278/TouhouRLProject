@@ -14,11 +14,13 @@ ADDRESS_OF_LIVES = 0x00474C70
 ADDRESS_OF_POWER = 0x00474C48
 
 class touhou_env(gym.Env):
-    def __init__(self, game_number, game_path, game_title):
+    def __init__(self, game_number, game_path, game_title, stage=-1):
         super().__init__()
         self.game_number = game_number
         self.game_path = game_path
         self.game_title = game_title
+        self.stage = stage
+        self.stage_over = False
 
         self.monitor = {'top': 0 , 'left': 0, 'width': 1280, 'height': 960}
         self.sct = mss.mss()
@@ -62,9 +64,21 @@ class touhou_env(gym.Env):
             window.activate()
             window.moveTo(0, 0)
             time.sleep(6)
-            for i in range(8):
+            pydirectinput.press('z')
+            time.sleep(0.5)
+            if (self.stage != -1):
+                pydirectinput.press('down')
+                time.sleep(0.5)
+                pydirectinput.press('down')
+                time.sleep(0.5)
+            for i in range(4):
                 pydirectinput.press('z')
-                time.sleep(0.2)
+                time.sleep(0.5)
+            if (self.stage != -1):
+                for i in range(self.stage - 1):
+                    pydirectinput.press('down')
+                    time.sleep(0.5)
+            pydirectinput.press('z')
             time.sleep(3)
             self.process = Pymem("th10.exe")
             if not self.is_process_alive():
@@ -77,12 +91,21 @@ class touhou_env(gym.Env):
             self._start_game()
         for k in self.held_keys:
             pydirectinput.keyUp(k)
-            self.held_keys.remove(k)
-        time.sleep(1)
-        pydirectinput.press('esc')
-        time.sleep(1)
-        pydirectinput.press('r')
-        time.sleep(1)
+        self.held_keys.clear()
+        if self.stage_over and self.stage != -1:
+            time.sleep(0.5)
+            pydirectinput.press('z')
+            time.sleep(0.5)
+            pydirectinput.press('down')
+            time.sleep(0.5)
+            pydirectinput.press('z')
+            time.sleep(0.5)
+        else:
+            time.sleep(0.5)
+            pydirectinput.press('esc')
+            time.sleep(0.5)
+            pydirectinput.press('r')
+            time.sleep(0.5)
         obs = self._get_obs()
         self.current_step = 0
         info = {
@@ -94,7 +117,7 @@ class touhou_env(gym.Env):
         movement, shift, shoot = action
         for k in self.held_keys:
             pydirectinput.keyUp(k)
-            self.held_keys.remove(k)
+        self.held_keys.clear()
 
         keys_to_hold = self.movement_mapping.get(movement, [])
         if shift == 1:
@@ -109,6 +132,13 @@ class touhou_env(gym.Env):
         prev_lives = self.num_lives
         prev_power = self.power
         obs = self._get_obs()
+        self.is_stage_over(obs)
+        if self.stage_over:
+            reward = 100
+            terminated = True
+            truncated = False
+            info = {"lives": self.num_lives, "crash": False}
+            return obs, reward, terminated, truncated, info
         try:
             self.num_lives = self.process.read_int(ADDRESS_OF_LIVES)
             self.power = self.process.read_int(ADDRESS_OF_POWER)
@@ -120,14 +150,14 @@ class touhou_env(gym.Env):
             return obs, reward, terminated, truncated, info
 
         if prev_lives > self.num_lives:
-            reward = -10
+            reward = -50
         elif prev_lives < self.num_lives:
             reward = 10
         elif prev_lives == self.num_lives:
             reward = 0.1
         
         if prev_power < self.power:
-            reward = 0.3
+            reward += 0.3
 
         if self.num_lives == 0:
             terminated = True
@@ -156,9 +186,24 @@ class touhou_env(gym.Env):
             return proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE
         except Exception:
             return False
-        
+    
+    def is_stage_over(self, frame):
+        template = cv2.imread("./assets/stage_over.png")
+        resized = cv2.resize(template, (84, 84), interpolation=cv2.INTER_AREA)
+        match = cv2.matchTemplate(frame, resized, cv2.TM_CCOEFF_NORMED)
+        loc = np.where(match >= 0.8)
+        if len(loc[0]) > 0:
+            self.stage_over = True
+        else:
+            self.stage_over = False
     
     def close(self):
+        if self.process and self.process.process_handle:
+            try:
+                proc = psutil.Process(self.process.process_id)
+                proc.terminate()
+            except Exception as e:
+                print(f"Error terminating process: {e}")
         cv2.destroyAllWindows()
 
 
